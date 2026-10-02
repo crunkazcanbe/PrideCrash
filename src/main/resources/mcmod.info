@@ -1,0 +1,8 @@
+[{
+  "modid": "pridecrash",
+  "name": "PrideCrash",
+  "description": "Crash analyzer: names the mod that most likely caused a crash (stack frames and mixins traced to their mods), explains it in plain English, and shows a report on the next launch.",
+  "version": "0.1.0",
+  "mcversion": "1.12.2",
+  "authorList": ["crunkazcanbe"]
+}]

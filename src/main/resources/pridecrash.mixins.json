@@ -1,0 +1,9 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.dogpound.pridecrash.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "mixins": [
+    "MixinCrashReport"
+  ]
+}
