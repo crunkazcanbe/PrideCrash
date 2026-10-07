@@ -13,6 +13,8 @@ public class Config {
     public static boolean popupAfterCrash = true;
     @Name("fullScreenPopup") @Comment("Open the whole report screen instead of the banner (blocks the main menu until you close it — auto-join mods wait).")
     public static boolean fullScreenPopup = false;
+    @Name("forceWorldLoad") @Comment("When a mod breaks while a world is STARTING, skip that mod's broken step, keep loading the world, and tell you in chat which mod failed (instead of dropping you to the menu).")
+    public static boolean forceWorldLoad = true;
     @Name("aiUrl") @Comment("OpenAI-style chat URL for \"Ask AI\" (llama-swap / LiteLLM / Ollama). Empty = button off.")
     public static String aiUrl = "http://127.0.0.1:8080/v1/chat/completions";
     @Name("aiModel") @Comment("Model name sent to the AI.")

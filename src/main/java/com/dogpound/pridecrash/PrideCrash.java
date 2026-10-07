@@ -26,9 +26,18 @@ public class PrideCrash {
 
     public static class Proxy { public void init() {} }
 
+    public PrideCrash() {
+        // client: stand in for LoliASM's crash screens from the very start, so boot crashes show PrideCrash too
+        if (net.minecraftforge.fml.relauncher.FMLLaunchHandler.side().isClient()) {
+            try { MinecraftForge.EVENT_BUS.register(Class.forName("com.dogpound.pridecrash.client.CrashScreenSwap").newInstance()); }
+            catch (Throwable t) { LOG.warn("crash screen swap not registered: " + t); }
+        }
+    }
+
     @Mod.EventHandler
     public void init(FMLInitializationEvent e) {
         MinecraftForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.register(new WorldRescue());
         proxy.init();
         LOG.info("[PrideCrash] loaded OK");
     }

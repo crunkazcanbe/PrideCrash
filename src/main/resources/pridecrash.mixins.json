@@ -4,6 +4,10 @@
   "package": "com.dogpound.pridecrash.mixin",
   "compatibilityLevel": "JAVA_8",
   "mixins": [
-    "MixinCrashReport"
+    "MixinCrashReport",
+    "MixinLoadControllerRescue"
+  ],
+  "client": [
+    "MixinMinecraftCrashScreen"
   ]
 }

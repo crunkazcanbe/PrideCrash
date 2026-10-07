@@ -33,7 +33,7 @@ public class ClientProxy extends PrideCrash.Proxy {
         Minecraft mc = Minecraft.getMinecraft();
         net.minecraft.client.gui.FontRenderer fr = mc.fontRenderer;
         String who = banner.top() == null ? "" : "  §7Most likely: §f" + banner.top().name + " §7(" + banner.top().percent + "%)";
-        String l1 = "§c⚠ §lYour game crashed last time", l2 = fr.trimStringToWidth("§f" + banner.title, 300), btn = "See why ▶";
+        String l1 = (banner.title != null && banner.title.startsWith("The world couldn") ? "§c⚠ §lYour world stopped" : "§c⚠ §lYour game crashed last time"), l2 = fr.trimStringToWidth("§f" + banner.title, 300), btn = "See why ▶";
         int w = Math.min(e.getGui().width - 10, Math.max(fr.getStringWidth(l1 + who), fr.getStringWidth(l2)) + fr.getStringWidth(btn) + 40);
         int x = (e.getGui().width - w) / 2, y = 4, h = 26;
         net.minecraft.client.gui.Gui.drawRect(x, y, x + w, y + h, 0xE0140E22);
@@ -69,7 +69,8 @@ public class ClientProxy extends PrideCrash.Proxy {
         ClientCommandHandler.instance.registerCommand(new Cmd());
         // did the last run die without a crash report? (killed, or Java/driver crash → hs_err file)
         try {
-            Analyzer.Result silent = com.dogpound.pridecrash.Silent.checkAndMark(Reports.gameDir(), Reports.crashDir(), Reports.ourDir());
+            Analyzer.Result silent = com.dogpound.pridecrash.Silent.checked ? null
+                    : com.dogpound.pridecrash.Silent.checkAndMark(Reports.gameDir(), Reports.crashDir(), Reports.ourDir());
             if (silent != null && !Reports.pending().isFile()) {
                 java.nio.file.Files.write(Reports.pending().toPath(), silent.toJson().getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 PrideCrash.LOG.info("the last run closed without a crash report: " + silent.title);
@@ -87,9 +88,22 @@ public class ClientProxy extends PrideCrash.Proxy {
         return g instanceof GuiMainMenu || n.endsWith("MainMenu") || n.contains("TitleScreen");
     }
 
+    /** newest crash file we already know about; a newer one = a world just failed mid-session */
+    private long knownCrash = -1;
+
     @SubscribeEvent(priority = net.minecraftforge.fml.common.eventhandler.EventPriority.LOWEST)   // after menu mods swapped theirs in
     public void open(GuiOpenEvent e) {
-        if (checkedPending || !isTitle(e.getGui())) return;
+        if (!isTitle(e.getGui())) return;
+        // a world that failed to open (or crashed) drops you on the title screen: say why right away, no restart needed
+        // (requested feature)
+        List<File> fs = Reports.crashFiles();
+        long newest = fs.isEmpty() ? 0 : fs.get(0).lastModified();
+        if (knownCrash < 0) knownCrash = newest;
+        else if (newest > knownCrash && Config.popupAfterCrash) {
+            knownCrash = newest;
+            try { banner = Reports.load(fs.get(0)); banner.title = "The world couldn't keep running: " + banner.title; } catch (Exception ignored) { }
+        }
+        if (checkedPending) return;
         checkedPending = true;
         File p = Reports.pending();
         if (!Config.popupAfterCrash || !p.isFile()) return;

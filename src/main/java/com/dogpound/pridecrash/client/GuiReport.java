@@ -47,6 +47,13 @@ public class GuiReport extends GuiScreen {
     private PrideFrame f;
     private final List<Runnable> clicks = new ArrayList<>();                // hit-boxes rebuilt every frame
     private final List<int[]> boxes = new ArrayList<>();
+    private String closeLabel;          // set when we stand in for LoliASM's crash screens
+    private Runnable closeAction;
+
+    /** use a different close button (in place of LoliASM's crash screens: "Main Menu" / "Quit Game") */
+    public GuiReport withClose(String label, Runnable action) { this.closeLabel = label; this.closeAction = action; return this; }
+
+    private void close() { if (closeAction != null) closeAction.run(); else mc.displayGuiScreen(back); }
 
     public GuiReport(GuiScreen back, Analyzer.Result r, boolean afterCrash, int tab) {
         this(back, r, afterCrash);
@@ -145,7 +152,7 @@ public class GuiReport extends GuiScreen {
 
         // bottom bar
         int by = f.y + f.h - 24, bx = f.cx;
-        String close = back == null ? "Close" : afterCrash ? "Continue ▶" : "Back";
+        String close = closeLabel != null ? closeLabel : back == null ? "Close" : afterCrash ? "Continue ▶" : "Back";
         int cw = fr.getStringWidth(close) + 20;
         short_ = fr.getStringWidth("⎘ Copy report☰ Open crash file▣ Open folder⟲ Re-check✪ Ask AI") + 5 * 18 > f.cw - cw - 8;
         bx = bar(bx, by, "⎘ Copy report", 0xFF6A3FA0, mx, my, r == null ? null : () -> { setClipboardString(r.toText()); toast("Copied — paste it anywhere (Discord, a bug report…)"); });
@@ -157,7 +164,7 @@ public class GuiReport extends GuiScreen {
         });
         bar(bx, by, "✪ Ask AI", 0xFF24408E, mx, my, r == null ? null : () -> { tab = 5; askAi(r); });
         PrideFrame.button(f.cx + f.cw - cw, by, cw, 18, close, 0xFF008026, mx, my);
-        hit(f.cx + f.cw - cw, by, cw, 18, () -> mc.displayGuiScreen(back));
+        hit(f.cx + f.cw - cw, by, cw, 18, this::close);
 
         if (!toast.isEmpty() && System.currentTimeMillis() < toastUntil) {
             int tw = fr.getStringWidth(toast) + 16, tx2 = f.x + (f.w - tw) / 2;
@@ -516,7 +523,7 @@ public class GuiReport extends GuiScreen {
 
     @Override
     protected void keyTyped(char c, int key) {
-        if (key == Keyboard.KEY_ESCAPE) { mc.displayGuiScreen(back); return; }
+        if (key == Keyboard.KEY_ESCAPE) { close(); return; }
         if (key == Keyboard.KEY_DOWN) select(Math.min(files.size() - 1, selected + 1));
         else if (key == Keyboard.KEY_UP) select(Math.max(0, selected - 1));
         else if (key == Keyboard.KEY_TAB) { tab = (tab + 1) % TABS.length; scroll = 0; }

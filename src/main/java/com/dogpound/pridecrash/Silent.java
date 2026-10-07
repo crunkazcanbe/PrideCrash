@@ -19,19 +19,83 @@ public final class Silent {
 
     static File flag(File ourDir) { return new File(ourDir, "running.flag"); }
 
+    public static volatile boolean checked;
+
+    /**
+     * Earliest possible check, from the coremod (2026-10-03: a launch that crashed during mod construction never reached
+     * the old check in init, and its crash report then overwrote the waiting one). Every silent death is saved to the
+     * history as its own file; it only becomes "pending" (shown on the menu) if nothing newer is waiting.
+     */
+    public static void early(File gameDir, File crashDir, File ourDir) {
+        if (checked) return;
+        checked = true;
+        try {
+            File flag = flag(ourDir);
+            long since = flag.isFile() ? flag.lastModified() : 0;
+            Analyzer.Result r = checkAndMark(gameDir, crashDir, ourDir);
+            if (r == null) return;
+            byte[] json = r.toJson().getBytes(StandardCharsets.UTF_8);
+            String name = "crash-" + new java.text.SimpleDateFormat("yyyy-MM-dd_HH.mm.ss").format(new java.util.Date(since)) + "-silent";
+            Files.write(new File(ourDir, name + ".json").toPath(), json);
+            File pending = new File(ourDir, "pending.json");
+            if (!pending.isFile() || pending.lastModified() < since) Files.write(pending.toPath(), json);
+            System.out.println("[PrideCrash] the last run closed without a crash report: " + r.title);
+        } catch (Throwable t) {
+            System.out.println("[PrideCrash] silent-crash check failed: " + t);
+        }
+    }
+
     /** at game start: look at the last run, then mark this one as running. Returns a result if the last run died silently. */
     public static Analyzer.Result checkAndMark(File gameDir, File crashDir, File ourDir) {
         Analyzer.Result r = null;
         File flag = flag(ourDir);
-        if (flag.isFile()) r = lastRun(gameDir, crashDir, flag.lastModified());
+        if (flag.isFile()) r = lastRun(gameDir, crashDir, flag.lastModified(), pidIn(flag));
         try {
-            Files.write(flag.toPath(), ("started " + new java.util.Date()).getBytes(StandardCharsets.UTF_8));
+            Files.write(flag.toPath(), ("started " + new java.util.Date() + " pid=" + myPid()).getBytes(StandardCharsets.UTF_8));
             Runtime.getRuntime().addShutdownHook(new Thread(() -> flag.delete(), "PrideCrash clean exit"));
         } catch (Exception ignored) {}
         return r;
     }
 
-    static Analyzer.Result lastRun(File gameDir, File crashDir, long since) {
+    static String myPid() {
+        try { return java.lang.management.ManagementFactory.getRuntimeMXBean().getName().split("@")[0]; } catch (Throwable t) { return ""; }
+    }
+
+    static String pidIn(File flag) {
+        try {
+            Matcher m = Pattern.compile("pid=(\\d+)").matcher(new String(Files.readAllBytes(flag.toPath()), StandardCharsets.UTF_8));
+            return m.find() ? m.group(1) : "";
+        } catch (Exception e) { return ""; }
+    }
+
+    /** Linux only: the kernel log line if the out-of-memory killer took that pid (journalctl, readable by the user) */
+    static String oomLine(long since, String pid) {
+        if (pid.isEmpty() || !new File("/proc").isDirectory()) return null;
+        try {
+            Process p = new ProcessBuilder("journalctl", "-k", "-q", "--no-pager", "--since", "@" + (since / 1000)).redirectErrorStream(true).start();
+            java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
+            String l, hit = null;
+            while ((l = br.readLine()) != null) if (l.contains("Killed process " + pid + " ")) hit = l;
+            p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            return hit;
+        } catch (Exception e) { return null; }
+    }
+
+    /** her launcher wrapper records every exit (mc-gamewrap → ~/.cache/mc-exit.log): "exit=137 signal KILL" */
+    static String exitSignal(long since) {
+        try {
+            File f = new File(System.getProperty("user.home"), ".cache/mc-exit.log");
+            if (!f.isFile() || f.lastModified() < since) return null;
+            List<String> lines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
+            String last = lines.isEmpty() ? "" : lines.get(lines.size() - 1);
+            Matcher m = Pattern.compile("signal (\\w+)").matcher(last);
+            return m.find() ? m.group(1) : null;
+        } catch (Exception e) { return null; }
+    }
+
+    static Analyzer.Result lastRun(File gameDir, File crashDir, long since) { return lastRun(gameDir, crashDir, since, ""); }
+
+    static Analyzer.Result lastRun(File gameDir, File crashDir, long since, String pid) {
         File[] crashes = crashDir.listFiles((d, n) -> n.endsWith(".txt"));
         if (crashes != null) for (File c : crashes) if (c.lastModified() >= since) return null;   // a normal crash — already handled
         File hs = null;
@@ -43,10 +107,20 @@ public final class Silent {
         r.description = "The game closed without a crash report";
         r.time = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(new java.util.Date(since)) + " (the run that started then)";
         r.file = hs == null ? "" : hs.getAbsolutePath();
+        String oom = hs == null ? oomLine(since, pid) : null;
+        String sig = hs == null ? exitSignal(since) : null;
         if (hs != null) fromHsErr(r, hs);
-        else {
-            r.exception = "killed";
-            r.title = "The game was closed from outside — no crash, no error";
+        else if (oom != null) {
+            r.exception = "out of memory (killed)";
+            r.message = oom.replaceAll("^.*?Out of memory: ", "");
+            r.title = "The computer ran out of RAM, so Linux closed Minecraft";
+            r.plain = "Linux's out-of-memory killer stopped Minecraft because the whole computer was out of memory. "
+                    + "Minecraft uses more than its heap (graphics, Distant Horizons, native code), and other programs (AI models, browsers, Docker) share the same RAM.";
+            r.tips.add("Lower Minecraft's max memory a little, or close big programs (AI models, browsers) while playing.");
+            r.tips.add("Kernel log: " + r.message);
+        } else {
+            r.exception = sig == null ? "killed" : "killed (SIG" + sig + ")";
+            r.title = "The game was closed from outside — no crash, no error" + (sig == null ? "" : " (signal " + sig + ")");
             r.plain = "Minecraft didn't crash by itself: it was stopped by something outside it, and Java had no chance to write anything. "
                     + "On Linux the usual reason is the out-of-memory killer — the whole computer ran out of RAM, so the biggest program (Minecraft) got killed. "
                     + "Force-closing it, or the computer going to sleep/losing power, looks the same.";

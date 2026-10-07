@@ -65,11 +65,23 @@ The crash description is turned into words too ("Ticking entity" becomes "updati
 - If the flag is still there on the next start and no crash report is newer than it, the last run died silently. PrideCrash then looks for an `hs_err_pid*.log` from that run in the game folder and its parent:
   - **No hs_err file**: the game was killed from outside (on Linux usually the out-of-memory killer, or a force-close or power loss). Tips include checking `journalctl -k` for killed processes.
   - **hs_err file**: reads the signal (`SIGSEGV`, `EXCEPTION_*`) and the "Problematic frame" line, then classifies it as native out-of-memory, a graphics driver crash (NVIDIA, Mesa, AMD, Intel, Vulkan, EGL and similar libraries), an LWJGL/OpenAL/GLFW crash, a JVM-internal crash (naming the mod if a Java frame is shown), or another native library crash.
+- **Out of memory on Linux**: when no hs_err file exists, PrideCrash checks the kernel log (`journalctl -k`) for the game's process id. If the out-of-memory killer took it, the report says the computer ran out of RAM and quotes the kernel log line. Otherwise the kill signal is shown when it is known.
+- The check runs at the earliest possible moment (from the coremod), so a launch that crashes while mods are being built no longer hides the previous run's result.
+- Every silent death is saved in the crash history as its own entry; it only becomes the pending main-menu banner if nothing newer is waiting.
 - The result is shown on the next main menu like a normal crash.
+
+### Replaces LoliASM's crash screens
+- LoliASM can keep the game running after a crash and show its own crash screen. PrideCrash replaces that screen with its report screen (guilty mod, explanation, what to try), with a **Main Menu** button for in-game crashes or **Quit Game** for crashes during startup.
+- This also works for crashes that happen while mods are still loading, before PrideCrash itself has finished loading.
+
+### Force-load worlds
+- With `forceWorldLoad` on (the default), when a mod throws an error while a world is starting, that mod's broken step is skipped and the world keeps loading instead of dropping you to the menu.
+- Every player who joins is told in chat which mods failed. Those mods may not work in that world until fixed; full details are in `logs/latest.log`.
 
 ### Main-menu banner
 - After a crash, the first title screen shows a banner: "Your game crashed last time", the title, and the top suspect with its percentage. Click "See why" to open the report, or the ✕ to dismiss it.
 - Works with replacement main menus (any screen whose class name ends in `MainMenu` or contains `TitleScreen`).
+- If a world stops or fails to open and drops you on the title screen, the banner appears right away ("Your world stopped"), no restart needed.
 - Optionally the full report screen can open instead of the banner (`fullScreenPopup`).
 
 ### Report screen
@@ -83,6 +95,7 @@ The crash description is turned into words too ("Ticking entity" becomes "updati
   - **Ask AI**: see below.
 - Bottom bar: Copy report, Open crash file, Open folder, Re-check (re-analyse), Ask AI, and Close / Back / Continue.
 - Keys: ↑/↓ select a crash, Tab cycles tabs, 1–6 jump to a tab, Ctrl+C copies the report, Esc closes.
+- The screen follows the pack-wide menu theme chosen in PrideCanvas (Themes) when PrideCanvas is installed.
 
 ### Ask AI (optional)
 - Sends PrideCrash's analysis plus the first 80 lines of the crash report to an OpenAI-compatible chat completions endpoint (llama-swap, LiteLLM, Ollama and similar). The prompt asks for what broke, which mod is likely to blame and why, and up to four things to try.
@@ -110,6 +123,7 @@ File: `config/pridecrash.cfg`
 | `enabled` | `true` | Add a "PrideCrash says" section to every crash report. |
 | `indexJars` | `true` | Read every mod jar's file list to name mods exactly (about 2 seconds, only when a crash happens or a report is opened). Off = guess from package names. |
 | `popupAfterCrash` | `true` | After a crash, show a clickable banner on the next main menu. |
+| `forceWorldLoad` | `true` | When a mod breaks while a world is starting, skip that mod's broken step, keep loading the world, and say in chat which mod failed. |
 | `fullScreenPopup` | `false` | Open the whole report screen instead of the banner. This blocks the main menu until closed, so auto-join mods wait. |
 | `aiUrl` | `http://127.0.0.1:8080/v1/chat/completions` | OpenAI-style chat URL for "Ask AI". Empty = button off. |
 | `aiModel` | `qwen27` | Model name sent to the AI. |
@@ -151,14 +165,13 @@ Both `Analyzer` and `Silent` have a `main` method with built-in self-checks that
 
 MIT License. © 2026 crunkazcanbe.
 
-## Credits
-
-Made by crunkazcanbe, with Claude.
-
-
 ## Compile-only jars
 
 The build compiles against these jars in `libs/` (other authors' mods / APIs). They are not included in this repo — get them from their official pages and drop them in `libs/` before building:
 
 - `mixinbooter-api.jar`
 - `sponge-mixin.jar`
+
+## Credits
+
+Made with [Claude Code](https://claude.com/claude-code) and [Blockbench](https://www.blockbench.net).
